@@ -24,5 +24,8 @@ include:
   - board: nice_nano
     shield: sofle_right
   - board: nice_nano
+    shield: sofleltest
+    artifact-name: sofle_left_test
+  - board: nice_nano
     shield: soflertest
     artifact-name: sofle_right_test
