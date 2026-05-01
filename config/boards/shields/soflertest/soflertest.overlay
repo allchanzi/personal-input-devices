@@ -35,8 +35,7 @@
             , <&pro_micro 16 GPIO_ACTIVE_HIGH>
             , <&pro_micro 14 GPIO_ACTIVE_HIGH>
             , <&pro_micro 15 GPIO_ACTIVE_HIGH>
-            , <&pro_micro 18 GPIO_ACTIVE_HIGH>
-            /* P/;/slash column rerouted from damaged D18 MCU pin to D4 via jumper wire. */
+            /* P/0/semicolon/slash column rerouted from damaged D18 MCU pin to D4 via jumper wire. */
             , <&pro_micro 4 GPIO_ACTIVE_HIGH>
             , <&pro_micro 19 GPIO_ACTIVE_HIGH>
             ;
