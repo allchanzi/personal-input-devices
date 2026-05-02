@@ -6,6 +6,28 @@
 
 #include "sofle.dtsi"
 
+/ {
+    keys {
+        compatible = "gpio-keys";
+
+        right_encoder_press_gpio_key: right_encoder_press_gpio_key {
+            gpios = <&pro_micro 9 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+        };
+    };
+
+    right_encoder_press_wakeup: right_encoder_press_wakeup {
+        compatible = "zmk,gpio-key-wakeup-trigger";
+        trigger = <&right_encoder_press_gpio_key>;
+        wakeup-source;
+        extra-gpios = <&pro_micro 19 GPIO_ACTIVE_HIGH>;
+    };
+
+    soft_off_wakers {
+        compatible = "zmk,soft-off-wakeup-sources";
+        wakeup-sources = <&right_encoder_press_wakeup>;
+    };
+};
+
 &default_transform {
     col-offset = <6>;
 };
