@@ -8,25 +8,38 @@
   #include <dt-bindings/zmk/keys.h>
 
   / {
+    macros {
+      rshift_layer_macro: rshift_layer_macro {
+        compatible = "zmk,behavior-macro";
+        #binding-cells = <0>;
+        wait-ms = <0>;
+        tap-ms = <20>;
+        bindings
+          = <&macro_press &mo 1 &kp RIGHT_SHIFT>
+          , <&macro_pause_for_release>
+          , <&macro_release &mo 1 &kp RIGHT_SHIFT>;
+      };
+    };
+
     keymap {
       compatible = "zmk,keymap";
 
       layer0 {
         /* Layer 0 - zakladna
          * Shift znaky su v zatvorke. Alt/Option sem nedopisujem, lebo zavisi od OS layoutu.
-         * ESC   1(!) 2(@) 3(#) 4($) 5(%)    6(^) 7(&) 8(*) 9(() 0()) BSPC
-         * TAB   Q    W    E    R    T        Y    U    I    O    P    -(_)
-         * \(|)  A    S    D    F    G        H    J    K    L    ;(:) =(+)
-         * `(~)  Z    X    C    V    B   MUTE  ·    N    M    ,(<) .(>) /(?) RSHFT
+         * ESC   1(!) 2(@) 3(#) 4($) 5(%)    6(^) 7(&) 8(*) 9(() 0()) -(_)
+         * TAB   Q    W    E    R    T        Y    U    I    O    P    BSPC
+         * \(|)  A    S    D    F    G        H    J    K    L    ;(:) '(")
+         * `(~)  Z    X    C    V    B   MUTE  ·    N    M    ,(<) .(>) /(?) RSHFT/MO(1)
          *
          * LCTRL LALT LGUI MO(1) SPACE   |   ENTER CAPS  [({) ](}) =(+ )
 
          */
         bindings = <
-          &kp ESCAPE &kp N1 &kp N2 &kp N3 &kp N4 &kp N5 &kp N6 &kp N7 &kp N8 &kp N9 &kp N0 &kp BACKSPACE
-          &kp TAB &kp Q &kp W &kp E &kp R &kp T &kp Y &kp U &kp I &kp O &kp P &kp MINUS
-          &kp BACKSLASH &kp A &kp S &kp D &kp F &kp G &kp H &kp J &kp K &kp L &kp SEMICOLON &kp EQUAL
-          &kp GRAVE &kp Z &kp X &kp C &kp V &kp B &kp C_MUTE &none &kp N &kp M &kp COMMA &kp DOT &kp SLASH &kp RIGHT_SHIFT
+          &kp ESCAPE &kp N1 &kp N2 &kp N3 &kp N4 &kp N5 &kp N6 &kp N7 &kp N8 &kp N9 &kp N0 &kp MINUS
+          &kp TAB &kp Q &kp W &kp E &kp R &kp T &kp Y &kp U &kp I &kp O &kp P &kp BACKSPACE
+          &kp BACKSLASH &kp A &kp S &kp D &kp F &kp G &kp H &kp J &kp K &kp L &kp SEMICOLON &kp SINGLE_QUOTE
+          &kp GRAVE &kp Z &kp X &kp C &kp V &kp B &kp C_MUTE &none &kp N &kp M &kp COMMA &kp DOT &kp SLASH &rshift_layer_macro
           &kp LEFT_CONTROL &kp LEFT_ALT &kp LEFT_GUI &mo 1 &kp SPACE &kp ENTER &kp CAPS &kp LEFT_BRACKET &kp RIGHT_BRACKET &kp EQUAL
         >;
         sensor-bindings = <&inc_dec_kp C_VOL_DN C_VOL_UP &inc_dec_kp LG(EQUAL) LG(MINUS)>;
