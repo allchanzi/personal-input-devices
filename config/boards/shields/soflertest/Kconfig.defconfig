@@ -1,9 +1,0 @@
-# Copyright (c) 2026
-# SPDX-License-Identifier: MIT
-
-if SHIELD_SOFLERTEST
-
-config ZMK_KEYBOARD_NAME
-    default "SofleRTest"
-
-endif
