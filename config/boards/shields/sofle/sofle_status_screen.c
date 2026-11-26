@@ -1,11 +1,21 @@
 /*
- * Custom 128x32 OLED status screen for the Sofle central (left) half.
+ * Custom OLED status screen for the Sofle central (left) half, in portrait.
  *
- *   BT2 ok            FN
- *   L +85%        R 72%
+ * The 128x32 panel is read rotated: its physical left edge is the bottom,
+ * its physical right edge is the top. Content is drawn on an off-screen
+ * 32x128 portrait canvas and copied rotated onto the visible 128x32 canvas.
  *
- * Line 1: active output (USB / BT profile + state), active layer name.
- * Line 2: left battery ("+" while USB powered), right (peripheral) battery.
+ *   +----+
+ *   |BT2 |   output: USB / BT profile
+ *   | ok |   BT state: ok / -- / new
+ *   |----|
+ *   |BASE|   active layer
+ *   |----|
+ *   | L+ |   left battery ("+" while USB powered)
+ *   |85% |
+ *   | R  |   right (peripheral) battery
+ *   |72% |
+ *   +----+
  *
  * SPDX-License-Identifier: MIT
  */
@@ -30,6 +40,20 @@
 #include <zmk/events/ble_active_profile_changed.h>
 #endif
 
+/* Physical panel size (landscape). */
+#define PANEL_W 128
+#define PANEL_H 32
+/* Portrait drawing size. */
+#define PORT_W PANEL_H
+#define PORT_H PANEL_W
+
+/*
+ * Same logical colours as the built-in mono theme (light background); the
+ * panel's inversion-on setting makes the text the lit pixels.
+ */
+#define COLOR_BG lv_color_white()
+#define COLOR_FG lv_color_black()
+
 struct sofle_status_state {
     struct zmk_endpoint_instance endpoint;
     bool ble_connected;
@@ -41,10 +65,10 @@ struct sofle_status_state {
     bool usb_powered;
 };
 
-static lv_obj_t *output_label;
-static lv_obj_t *layer_label;
-static lv_obj_t *battery_left_label;
-static lv_obj_t *battery_right_label;
+static lv_color_t portrait_buf[PORT_W * PORT_H];
+static lv_color_t panel_buf[PANEL_W * PANEL_H];
+static lv_obj_t *portrait_canvas;
+static lv_obj_t *panel_canvas;
 
 /* Only touched from event context (state_func), so no extra locking needed. */
 static int16_t peripheral_battery = -1;
@@ -78,33 +102,79 @@ static struct sofle_status_state sofle_status_get_state(const zmk_event_t *eh) {
     };
 }
 
-static void sofle_status_update_cb(struct sofle_status_state state) {
-    char text[20];
+static void draw_line_text(lv_draw_label_dsc_t *dsc, lv_coord_t y, const char *text) {
+    lv_canvas_draw_text(portrait_canvas, 0, y, PORT_W, dsc, text);
+}
 
-    if (state.endpoint.transport == ZMK_TRANSPORT_USB) {
-        snprintf(text, sizeof(text), "USB");
-    } else {
-        const char *ble_state = !state.ble_bonded ? "new" : (state.ble_connected ? "ok" : "--");
-        snprintf(text, sizeof(text), "BT%d %s", state.endpoint.ble.profile_index + 1, ble_state);
+static void draw_separator(lv_coord_t y) {
+    lv_draw_rect_dsc_t rect;
+    lv_draw_rect_dsc_init(&rect);
+    rect.bg_color = COLOR_FG;
+    lv_canvas_draw_rect(portrait_canvas, 2, y, PORT_W - 4, 1, &rect);
+}
+
+/*
+ * Portrait pixel (px, py) -> panel pixel (x, y):
+ * portrait top (py = 0) is the panel's right edge, portrait left (px = 0)
+ * is the panel's top edge.
+ */
+static void copy_rotated(void) {
+    for (int py = 0; py < PORT_H; py++) {
+        for (int px = 0; px < PORT_W; px++) {
+            int x = PANEL_W - 1 - py;
+            int y = px;
+            panel_buf[y * PANEL_W + x] = portrait_buf[py * PORT_W + px];
+        }
     }
-    lv_label_set_text(output_label, text);
+    lv_obj_invalidate(panel_canvas);
+}
 
+static void sofle_status_update_cb(struct sofle_status_state state) {
+    char text[12];
+    lv_draw_label_dsc_t dsc;
+    lv_draw_label_dsc_init(&dsc);
+    dsc.color = COLOR_FG;
+    dsc.font = &lv_font_montserrat_10;
+    dsc.align = LV_TEXT_ALIGN_CENTER;
+
+    lv_canvas_fill_bg(portrait_canvas, COLOR_BG, LV_OPA_COVER);
+
+    /* Output */
+    if (state.endpoint.transport == ZMK_TRANSPORT_USB) {
+        draw_line_text(&dsc, 2, "USB");
+    } else {
+        snprintf(text, sizeof(text), "BT%d", state.endpoint.ble.profile_index + 1);
+        draw_line_text(&dsc, 2, text);
+        draw_line_text(&dsc, 14,
+                       !state.ble_bonded ? "new" : (state.ble_connected ? "ok" : "--"));
+    }
+
+    draw_separator(30);
+
+    /* Layer */
     if (state.layer_name != NULL && strlen(state.layer_name) > 0) {
         snprintf(text, sizeof(text), "%s", state.layer_name);
     } else {
         snprintf(text, sizeof(text), "L%d", state.layer_index);
     }
-    lv_label_set_text(layer_label, text);
+    draw_line_text(&dsc, 36, text);
 
-    snprintf(text, sizeof(text), "L %s%u%%", state.usb_powered ? "+" : "", state.battery_left);
-    lv_label_set_text(battery_left_label, text);
+    draw_separator(54);
 
+    /* Batteries */
+    draw_line_text(&dsc, 60, state.usb_powered ? "L+" : "L");
+    snprintf(text, sizeof(text), "%u%%", state.battery_left);
+    draw_line_text(&dsc, 72, text);
+
+    draw_line_text(&dsc, 92, "R");
     if (state.battery_right < 0) {
-        snprintf(text, sizeof(text), "R --");
+        draw_line_text(&dsc, 104, "--");
     } else {
-        snprintf(text, sizeof(text), "R %d%%", state.battery_right);
+        snprintf(text, sizeof(text), "%d%%", state.battery_right);
+        draw_line_text(&dsc, 104, text);
     }
-    lv_label_set_text(battery_right_label, text);
+
+    copy_rotated();
 }
 
 ZMK_DISPLAY_WIDGET_LISTENER(sofle_status, struct sofle_status_state, sofle_status_update_cb,
@@ -126,17 +196,16 @@ ZMK_SUBSCRIPTION(sofle_status, zmk_ble_active_profile_changed);
 lv_obj_t *zmk_display_status_screen() {
     lv_obj_t *screen = lv_obj_create(NULL);
 
-    output_label = lv_label_create(screen);
-    lv_obj_align(output_label, LV_ALIGN_TOP_LEFT, 0, 0);
+    /* Off-screen portrait canvas: only used as a drawing target. */
+    portrait_canvas = lv_canvas_create(screen);
+    lv_canvas_set_buffer(portrait_canvas, portrait_buf, PORT_W, PORT_H, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_add_flag(portrait_canvas, LV_OBJ_FLAG_HIDDEN);
 
-    layer_label = lv_label_create(screen);
-    lv_obj_align(layer_label, LV_ALIGN_TOP_RIGHT, 0, 0);
-
-    battery_left_label = lv_label_create(screen);
-    lv_obj_align(battery_left_label, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-
-    battery_right_label = lv_label_create(screen);
-    lv_obj_align(battery_right_label, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    /* Visible landscape canvas covering the whole panel. */
+    panel_canvas = lv_canvas_create(screen);
+    lv_canvas_set_buffer(panel_canvas, panel_buf, PANEL_W, PANEL_H, LV_IMG_CF_TRUE_COLOR);
+    lv_obj_align(panel_canvas, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_canvas_fill_bg(panel_canvas, COLOR_BG, LV_OPA_COVER);
 
     sofle_status_init();
     return screen;
