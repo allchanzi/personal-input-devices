@@ -16,9 +16,6 @@
  *   | 85% |  percent, or a bolt while USB powered
  *   |R[###]|  right battery bar ("x" when the right half is disconnected)
  *   | 72% |
- *   |-----|
- *   |W  42|  words per minute
- *   |# 1.2k| key presses since boot
  *   +-----+
  *
  * SPDX-License-Identifier: MIT
@@ -35,14 +32,11 @@
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/events/keycode_state_changed.h>
-#include <zmk/events/position_state_changed.h>
-#include <zmk/events/wpm_state_changed.h>
 #include <zmk/battery.h>
 #include <zmk/endpoints.h>
 #include <zmk/hid.h>
 #include <zmk/keymap.h>
 #include <zmk/usb.h>
-#include <zmk/wpm.h>
 #include <dt-bindings/zmk/modifiers.h>
 
 #if IS_ENABLED(CONFIG_ZMK_BLE)
@@ -83,8 +77,6 @@ struct sofle_status_state {
     uint8_t battery_left;
     int16_t battery_right; /* -1 = unknown, 0 = disconnected */
     bool usb_powered;
-    int wpm;
-    uint32_t key_presses;
 };
 
 static lv_color_t portrait_buf[PORT_W * PORT_H];
@@ -94,7 +86,6 @@ static lv_obj_t *panel_canvas;
 
 /* Only touched from event context (state_func), so no extra locking needed. */
 static int16_t peripheral_battery = -1;
-static uint32_t key_presses;
 
 static struct sofle_status_state sofle_status_get_state(const zmk_event_t *eh) {
     if (eh != NULL) {
@@ -106,23 +97,16 @@ static struct sofle_status_state sofle_status_get_state(const zmk_event_t *eh) {
             peripheral_battery = pev->state_of_charge;
         }
 #endif
-        const struct zmk_position_state_changed *pos = as_zmk_position_state_changed(eh);
-        if (pos != NULL && pos->state) {
-            key_presses++;
-        }
     }
 
-    struct sofle_status_state state = {
-        .usb_output = zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB,
-        .mods = zmk_hid_get_explicit_mods(),
-        .battery_left = zmk_battery_state_of_charge(),
-        .battery_right = peripheral_battery,
+    struct sofle_status_state state = {0};
+    state.usb_output = zmk_endpoints_selected().transport == ZMK_TRANSPORT_USB;
+    state.mods = zmk_hid_get_explicit_mods();
+    state.battery_left = zmk_battery_state_of_charge();
+    state.battery_right = peripheral_battery;
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
-        .usb_powered = zmk_usb_is_powered(),
+    state.usb_powered = zmk_usb_is_powered();
 #endif
-        .wpm = zmk_wpm_get_state(),
-        .key_presses = key_presses,
-    };
 
 #if IS_ENABLED(CONFIG_ZMK_BLE)
     state.active_profile = zmk_ble_active_profile_index();
@@ -233,18 +217,6 @@ static void draw_battery(lv_draw_label_dsc_t *dsc, lv_coord_t y, const char *sid
     draw_text(dsc, 0, y + 11, PORT_W, LV_TEXT_ALIGN_CENTER, text);
 }
 
-static void format_count(char *buf, size_t len, uint32_t count) {
-    if (count < 1000) {
-        snprintf(buf, len, "%u", count);
-    } else if (count < 10000) {
-        snprintf(buf, len, "%u.%uk", count / 1000, (count % 1000) / 100);
-    } else if (count < 1000000) {
-        snprintf(buf, len, "%uk", count / 1000);
-    } else {
-        snprintf(buf, len, "%uM", count / 1000000);
-    }
-}
-
 /*
  * Portrait pixel (px, py) -> panel pixel (x, y):
  * portrait top (py = 0) is the panel's right edge, portrait left (px = 0)
@@ -261,7 +233,31 @@ static void copy_rotated(void) {
     lv_obj_invalidate(panel_canvas);
 }
 
+static bool state_equal(const struct sofle_status_state *a, const struct sofle_status_state *b) {
+    if (a->usb_output != b->usb_output || a->active_profile != b->active_profile ||
+        a->layer_index != b->layer_index || a->layer_name != b->layer_name ||
+        a->mods != b->mods || a->battery_left != b->battery_left ||
+        a->battery_right != b->battery_right || a->usb_powered != b->usb_powered) {
+        return false;
+    }
+    for (int i = 0; i < PROFILE_COUNT; i++) {
+        if (a->profiles[i] != b->profiles[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void sofle_status_update_cb(struct sofle_status_state state) {
+    /* Most key presses change nothing on screen: skip the redraw entirely. */
+    static struct sofle_status_state last;
+    static bool drawn;
+    if (drawn && state_equal(&state, &last)) {
+        return;
+    }
+    last = state;
+    drawn = true;
+
     char text[16];
     lv_draw_label_dsc_t dsc;
     lv_draw_label_dsc_init(&dsc);
@@ -284,15 +280,6 @@ static void sofle_status_update_cb(struct sofle_status_state state) {
 
     draw_battery(&dsc, 44, "L", state.battery_left, state.usb_powered);
     draw_battery(&dsc, 68, "R", state.battery_right, false);
-    draw_separator(93);
-
-    draw_text(&dsc, 0, 96, 8, LV_TEXT_ALIGN_LEFT, "W");
-    snprintf(text, sizeof(text), "%d", state.wpm);
-    draw_text(&dsc, 8, 96, PORT_W - 8, LV_TEXT_ALIGN_RIGHT, text);
-
-    draw_text(&dsc, 0, 109, 8, LV_TEXT_ALIGN_LEFT, "#");
-    format_count(text, sizeof(text), state.key_presses);
-    draw_text(&dsc, 8, 109, PORT_W - 8, LV_TEXT_ALIGN_RIGHT, text);
 
     copy_rotated();
 }
@@ -304,8 +291,6 @@ ZMK_SUBSCRIPTION(sofle_status, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(sofle_status, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(sofle_status, zmk_battery_state_changed);
 ZMK_SUBSCRIPTION(sofle_status, zmk_keycode_state_changed);
-ZMK_SUBSCRIPTION(sofle_status, zmk_position_state_changed);
-ZMK_SUBSCRIPTION(sofle_status, zmk_wpm_state_changed);
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
 ZMK_SUBSCRIPTION(sofle_status, zmk_peripheral_battery_state_changed);
 #endif
