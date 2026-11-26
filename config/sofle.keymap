@@ -14,6 +14,7 @@
       compatible = "zmk,keymap";
 
       layer0 {
+        display-name = "BASE";
         /* Layer 0 - zakladna
          * Shift znaky su v zatvorke. Alt/Option sem nedopisujem, lebo zavisi od OS layoutu.
          * ESC   1(!) 2(@) 3(#) 4($) 5(%)    6(^) 7(&) 8(*) 9(() 0()) -(_)
@@ -35,6 +36,7 @@
       };
 
       layer2 {
+        display-name = "FN";
         /* Layer 2 - funkcne / symboly / sipky
          * Shift znaky su v zatvorke. Alt/Option sem nedopisujem, lebo zavisi od OS layoutu.
          * BTCLR BT1  BT2  BT3  BT4  BT5      F6   F7   F8   F9   F10  OFF
